@@ -1,0 +1,9 @@
+  pbl/dados/*.csv
+  pbl/dados/*.zip
+  pbl/modelos/*.pkl
+  pbl/mlruns/
+  *.csv
+  .vscode/
+  env/
+  __pycache__/
+  *.pyc
