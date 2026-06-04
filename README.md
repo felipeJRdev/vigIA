@@ -69,7 +69,6 @@ pbl/
 ├── graficos/                 PNGs gerados
 └── docs/
     ├── DOCUMENTACAO_PBL.md   documentação técnica completa
-    └── CONTEXTO_SESSAO.md    contexto para continuidade de sessão
 ```
 
 > **Nota:** `dados/`, `modelos/` e `*.pkl`/`*.csv` estão no `.gitignore`. Os arquivos são gerados localmente rodando os scripts na ordem abaixo.
