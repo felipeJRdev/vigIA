@@ -163,7 +163,15 @@ A API tem rate limit de ~100 req/min no tier gratuito. Os scripts já incluem de
 
 ## Resultados principais
 
-| Modelo | Dataset | AUC Teste | AUC Validação 2026 | Recall@0.3 |
-|---|---|---|---|---|
-| LightGBM Município | 992k amostras | 0.835 | 0.816 | 73.8% |
-| LightGBM Grade 0.1° | 11.9M amostras | 0.835 | 0.715* | 54.7%* |
+| | Estágio 1 — Município | Estágio 2 — Grade 0.1° |
+|---|---|---|
+| Dataset treino | 992k amostras | 18.4M amostras |
+| AUC Teste (2024-25) | **0.835** | 0.831 |
+| AUC Validação 2026 | **0.816** | 0.710 |
+| Limiar operacional | 0.3 | 0.6 |
+| Recall | **79.2%** | 70.3% |
+| Precisão | **95.3%** | 42.7% |
+| Top 20% captura | **62.7%** dos fogos | 48.5% dos fogos |
+
+Validação com dados reais BDqueimadas Jan–Jun 2026 (nunca vistos no treino).  
+Clima via Open-Meteo grade 0.5° (148 pontos, erro máx ~35km).

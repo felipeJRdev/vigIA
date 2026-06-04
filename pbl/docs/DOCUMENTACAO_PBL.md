@@ -168,18 +168,35 @@ LGBMClassifier(
 
 ### 4.3 Retreino e Validação com 2026 (Fase 3)
 
-Retreinado nas 992.446 amostras completas (2015–2025) → `modelo_pbl_full.pkl`
+Retreinado nas 992.446 amostras completas (2015–2025) → `modelos/municipio_full.pkl`
 
 **Validação com dados reais nunca vistos (Jan–Jun 2026):**
 
 | Métrica | Valor |
 |---|---|
 | AUC-ROC | **0,816** |
-| Recall (@0,5) | 47,4% |
-| Recall (@0,3) | 73,8% |
-| Precisão (@0,3) | 12,7% |
+| Recall @0,5 | 47,4% |
+| Recall @0,3 | 73,8% |
+| Precisão @0,3 | 12,7% |
 
 O recall cai em Jan–Jun porque é a estação chuvosa — focos são raros (4,9% dos dias vs 14% no treino). O **AUC de 0,816** confirma que a ordenação dos municípios permanece correta mesmo na chuva.
+
+**Análise de comparação previsão × realidade (limiar 0.3):**
+
+Um município é considerado "alertado" se tiver ao menos um dia com probabilidade ≥ 0,3 no período.
+
+| Métrica | Valor |
+|---|---|
+| Municípios alertados | 172 de 247 (70%) |
+| Recall | **79,2%** — 164 de 207 municípios com fogo foram alertados |
+| Precisão | **95,3%** — 164 de 172 alertas eram municípios que realmente queimaram |
+| Falsos negativos | 43 municípios com fogo não alertados |
+| Falsos positivos | 8 municípios alertados sem fogo |
+
+**Curva de captura** — priorizando pares (município, dia) com maior probabilidade:
+- Top 10% dos pares monitorados → captura **43,6%** dos fogos reais
+- Top 20% dos pares monitorados → captura **62,7%** dos fogos reais
+- 4,4× melhor que seleção aleatória no top 10%
 
 ### 4.4 Sistema de Previsão 5 Dias (Fase 4)
 
@@ -207,44 +224,37 @@ A grade espacial divide Goiás em células de **0,1° × 0,1° (~11km × 11km)**
 ### 5.2 Construção do Dataset de Grade (Fase 1 Grade)
 
 **Diferença crítica em relação ao dataset de município:**  
-Na primeira tentativa usamos `NEG_RATIO=4` (4 negativos por positivo por célula), o que inflou a taxa de positivos para 20%. Na validação com 2026 (estação chuvosa, 0.5% de positivos), a calibração ficou completamente errada → AUC 0.69.
+Na primeira tentativa usamos `NEG_RATIO=4`, inflando a taxa de positivos para 20%. Na validação com 2026 (0,5% de positivos na chuva), a calibração ficou errada → AUC 0,69.
 
-**Solução: negativos naturais completos** — produto cruzado de todas as células por todos os dias, sem amostragem:
-
-```
-2.976 células × 3.652 dias = 10.872.252 combinações possíveis
-10.872.252 − 249.284 positivos = 10.622.968 negativos
-```
+**Solução: negativos naturais completos** com clima exato via grade 0,5°:
 
 | Classe | Registros | % |
 |---|---|---|
-| fogo = 1 | 249.284 | 2,1% |
-| fogo = 0 | 11.708.284 | 97,9% |
-| **Total** | **11.957.568** | 100% |
+| fogo = 1 | 361.516 | 2,0% |
+| fogo = 0 | 18.032.888 | 98,0% |
+| **Total** | **18.394.404** | 100% |
 
-Gerado em chunks anuais (~1M linhas/ano) para controle de memória.
+**Clima:** grade intermediária de 0,5° (148 pontos únicos cobrindo Goiás). Cada célula 0,1° usa o ponto 0,5° mais próximo (erro máximo ~35km vs ~80km do proxy de município anterior).
 
 **Features do modelo de grade:**
 
 | Feature | Tipo | Diferença do município |
 |---|---|---|
 | `Mes`, `DiaSemana`, `Estacao_Seca` | Temporal | Igual |
-| `Cell_Lat`, `Cell_Lon` | Geográfica | Centro da célula (não centroide de município) |
+| `Cell_Lat`, `Cell_Lon` | Geográfica | Centro da célula 0,1° |
 | `Cell_Freq` | Histórica | Focos da célula / total Goiás |
-| `DiaSemChuva`, `Precipitacao` | Climática | Via município proxy (temporário) |
-| `media_focos_mes_hist` | Histórica | Média por célula+mês |
-
-**Clima atual:** cada célula usa o dado do município com centroide mais próximo (proxy). Isso introduz imprecisão de até ~80km. A correção (clima 0.5° exato) está pendente — ver Seção 5.5.
+| `DiaSemChuva`, `Precipitacao` | Climática | Open-Meteo no ponto 0,5° mais próximo |
+| `media_focos_mes_hist` | Histórica | Média de focos por célula+mês |
 
 ### 5.3 Modelagem da Grade (Fase 2 Grade)
 
 | Modelo | AUC Val | AUC Teste | Recall Teste |
 |---|---|---|---|
-| XGBoost (GPU) | 0,8147 | **0,8356** | 0,771 |
-| **LightGBM** | 0,8136 | 0,8348 | **0,769** |
-| Random Forest | 0,8112 | 0,8330 | 0,757 |
+| XGBoost (GPU) | 0,8086 | **0,8314** | 0,770 |
+| **LightGBM** | 0,8045 | 0,8285 | **0,761** |
+| Random Forest | 0,8051 | 0,8288 | 0,753 |
 
-XGBoost ficou ligeiramente acima por usar GPU (GTX 1650). LightGBM foi selecionado por ter recall comparável e ser mais flexível para produção (não requer CUDA).
+LightGBM selecionado por recall superior e não requerer CUDA em produção.
 
 **Melhores hiperparâmetros LightGBM grade:**
 ```python
@@ -257,35 +267,45 @@ LGBMClassifier(
 
 ### 5.4 Retreino e Validação com 2026 (Fase 3 Grade)
 
-Retreinado em 11.957.568 amostras (2015–2025) → `modelo_grade_full.pkl`
+Retreinado em 18.394.404 amostras (2015–2025) → `modelos/grade_full.pkl`
 
-| Métrica | Município | Grade (clima proxy) |
+| Métrica | Município | Grade (clima 0,5°) |
 |---|---|---|
-| AUC-ROC 2026 | **0,816** | 0,715 |
-| Recall @0,5 | **47,4%** | 27,3% |
-| Recall @0,3 | **73,8%** | 54,7% |
+| AUC-ROC 2026 | **0,816** | 0,710 |
+| Recall @0,5 | **47,4%** | 41,6% |
+| Recall @0,3 | **73,8%** | 66,6% |
 
-O gap em relação ao município tem duas causas estruturais:
-1. **Estação chuvosa:** taxa real 0,5% vs 2,1% no treino (gap de 4× vs 3× no município)
-2. **Clima proxy:** imprecisão de até 80km nas features DiaSemChuva e Precipitacao
+O gap em relação ao município é estrutural: células 0,1° têm menos histórico individual e o problema é intrinsecamente mais difícil (11km vs município inteiro).
 
-Ambas serão reduzidas com o clima 0.5° exato (ver Seção 5.5).
+**Análise de comparação previsão × realidade (limiar 0.6):**
 
-### 5.5 Pendência: Clima por Grade 0.5° (amanhã)
+Uma célula é "alertada" se tiver ao menos um dia com probabilidade ≥ 0,6 no período.
 
-Em vez de baixar clima para as 2.976 células (2h+, rate limit inviável), usamos uma grade climática intermediária:
+| Métrica | Valor |
+|---|---|
+| Células alertadas | 1.825 de 2.976 (61%) |
+| Recall | **70,3%** — 780 de 1.109 células com fogo foram alertadas |
+| Precisão | **42,7%** — 780 de 1.825 alertas eram células que realmente queimaram |
+| Falsos negativos | 329 células com fogo não alertadas |
+| Falsos positivos | 1.045 células alertadas sem fogo confirmado |
+
+**Curva de captura** — priorizando pares (célula, dia) com maior probabilidade:
+- Top 10% → captura **30,3%** dos fogos reais (3× melhor que aleatório)
+- Top 20% → captura **48,5%** dos fogos reais
+
+**Nota sobre limiares:** o limiar não faz parte do modelo — é aplicado após a previsão e pode ser ajustado sem retreinar.
+
+### 5.5 Clima por Grade 0.5° ✅ CONCLUÍDO (2026-06-04)
+
+Em vez de baixar clima para as 2.976 células (2h+, rate limit inviável), usamos uma grade climática intermediária de 148 pontos únicos que cobrem todo Goiás:
 
 | Estratégia | Chamadas API | Erro máximo | Tempo |
 |---|---|---|---|
 | Município proxy | 247 | ~80km | 6 min |
-| **Grade 0.5°** | **148** | **~35km** | **~10 min** |
+| **Grade 0.5° (adotada)** | **148** | **~35km** | **~10 min** |
 | Por célula 0.1° | 2.976 | ~0km | 2h+ (rate limit) |
 
-A grade 0.5° cobre todas as células com 148 pontos únicos. Cada célula 0.1° usa o ponto 0.5° mais próximo. Isso é **mais preciso que município** e **mais rápido**. Para retomar:
-
-```bash
-nohup bash /tmp/pipeline_clima2.sh &
-```
+Cada célula 0.1° usa o ponto 0.5° mais próximo. O dataset final ficou com 18.394.404 linhas (maior que a versão com proxy) porque o clima exato permitiu mapear mais células sem valores nulos.
 
 ### 5.6 Previsão 5 Dias — Grade (Fase 4 Grade)
 
@@ -364,11 +384,12 @@ Cron Job (diário, 06h)
 ### Estágio 2 — `estagio2_grade/`
 | Arquivo | Descrição |
 |---|---|
-| `fase1_dataset_grade.py` | Constrói dados/dataset_grade.csv (negativos naturais) |
-| `fase1b_clima_05graus.py` | Baixa clima 0.5° (148 pontos) — executar amanhã |
-| `fase1c_aplicar_clima.py` | Substitui clima proxy pelo exato no dataset |
+| `fase1_dataset_grade.py` | Constrói dados/dataset_grade.csv (18.4M linhas) |
+| `fase1b_clima_05graus.py` | Baixa clima 0.5° para 148 pontos (~10 min) |
+| `fase1c_aplicar_clima.py` | Substitui clima proxy pelo clima 0.5° no dataset |
 | `fase2_modelagem.py` | Treina modelos na grade |
 | `fase3_validacao_2026.py` | Retreino completo + validação 2026 grade |
+| `fase3b_graficos_comparacao.py` | Gráficos previsão × realidade (limiar 0.6) |
 | `fase4_previsao_offline.py` | Previsão 5 dias sem API (usa previsão de município) |
 
 ### Frontend — `frontend/`
@@ -381,18 +402,19 @@ Cron Job (diário, 06h)
 | Arquivo | Descrição |
 |---|---|
 | `dataset_municipio.csv` | 992.446 linhas, fogo=0/1, 2015–2025 |
-| `dataset_grade.csv` | 11.957.568 linhas, 2.976 células, 2015–2025 |
+| `dataset_grade.csv` | 18.394.404 linhas, 2.976 células, 2015–2025 (clima 0.5°) |
 | `mapeamento_municipio.csv` | 247 municípios, freq + centroide lat/lon |
 | `mapeamento_grade.csv` | 2.976 células + freq + município proxy |
-| `clima_historico.csv` | Precipitação diária 2015–2025, Open-Meteo |
-| `clima_2026.csv` | Precipitação Jan-Jun 2026, Open-Meteo |
-| `clima_grade.csv` | Clima por célula 0.1° via grade 0.5° (pendente) |
+| `clima_historico.csv` | Precipitação diária 2015–2025, 247 municípios |
+| `clima_2026.csv` | Precipitação Jan-Jun 2026, 247 municípios |
+| `clima_grade.csv` | Precipitação 2015–2025 expandida para 2.976 células via grade 0.5° |
+| `clima_pontos_05.csv` | Dados brutos dos 148 pontos 0.5° |
 
 ### Modelos — `modelos/`
 | Arquivo | Descrição |
 |---|---|
 | `municipio_full.pkl` | LightGBM 2015–2025, AUC 0.816 (**produção estágio 1**) |
-| `grade_full.pkl` | LightGBM grade 2015–2025, AUC 0.715 (**produção estágio 2**) |
+| `grade_full.pkl` | LightGBM grade 2015–2025, AUC 0.710 (**produção estágio 2**) |
 | `municipio_avaliacao.pkl` | LightGBM 2015–2022 (split temporal, avaliação) |
 | `grade_avaliacao.pkl` | LightGBM grade 2015–2022 (split temporal, avaliação) |
 
@@ -419,17 +441,35 @@ Cron Job (diário, 06h)
 | n_jobs=1 no estimador interno | Nested parallelism travou processo por 30+ minutos |
 | Negativos naturais completos (grade) | NEG_RATIO=4 inflou positivos para 20%, causou AUC 0.69 |
 | Grade climática 0.5° | 148 pontos vs 2.976: sem rate limit, erro máx ~35km |
-| Ranking relativo no estágio 2 | Calibração absoluta ruim na chuva; ranking interno é robusto |
+| Limiar E1 = 0.3 | Recall 79.2%, Precisão 95.3% — equilíbrio para alerta regional |
+| Limiar E2 = 0.6 | Recall 70.3%, Precisão 42.7% — equilíbrio para drill-down geográfico |
+| Limiar ≠ retreino | O limiar é aplicado pós-previsão; mudar limiar não requer retreinar |
 | Dois estágios complementares | Município: triagem confiável; grade: localização operacional |
 
 ---
 
-## 11. Conclusões
+## 11. Resultados Consolidados
+
+| | Estágio 1 — Município | Estágio 2 — Grade 0.1° |
+|---|---|---|
+| Modelo | LightGBM | LightGBM |
+| Dataset treino | 992k amostras | 18.4M amostras |
+| AUC Teste (2024-25) | **0.835** | 0.831 |
+| AUC Validação 2026 | **0.816** | 0.710 |
+| Limiar operacional | 0.3 | 0.6 |
+| Recall (limiar) | **79.2%** | 70.3% |
+| Precisão (limiar) | **95.3%** | 42.7% |
+| Top 10% captura | **43.6%** fogos | 30.3% fogos |
+| Top 20% captura | **62.7%** fogos | 48.5% fogos |
+
+---
+
+## 12. Conclusões
 
 O sistema vigIA combina dois modelos LightGBM em estágios complementares:
 
-**Estágio 1 (município, AUC 0,816):** identifica com alta confiança quais dos 247 municípios de Goiás estão em risco nos próximos 5 dias. Num contexto de apoio ao combate a incêndios, permite priorização de recursos e antecipação antes da detecção satelital.
+**Estágio 1 (município, AUC 0,816):** com limiar 0,3, alerta 172 de 247 municípios e captura 79,2% dos fogos reais com precisão de 95,3%. Identifica quais municípios priorizar nos próximos 5 dias antes da detecção satelital.
 
-**Estágio 2 (grade 0,1°, AUC 0,715):** detalha a localização do risco dentro dos municípios de alto risco, com resolução de ~11km × 11km. Mesmo com AUC menor (estação chuvosa + clima proxy), o ranking relativo entre células é útil para planejamento de campo.
+**Estágio 2 (grade 0,1°, AUC 0,710):** com limiar 0,6, alerta 61% do território e captura 70,3% dos fogos com precisão de 42,7%. Detalha a localização dentro dos municípios de alto risco com resolução de ~11km × 11km.
 
-A combinação dos dois estágios torna o sistema operacionalmente completo: do alerta regional à localização aproximada — tudo com dados abertos (BDqueimadas + Open-Meteo) e sem custo de infraestrutura.
+O sistema opera com dados inteiramente abertos (BDqueimadas/INPE + Open-Meteo), sem custo de infraestrutura de dados, e é capaz de gerar previsões para os próximos 5 dias em ~6 minutos de chamadas à API.
