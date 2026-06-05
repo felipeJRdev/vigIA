@@ -2,7 +2,6 @@ pbl/dados/*.csv
 !pbl/dados/lookup_*.csv
 !pbl/dados/mapeamento_*.csv
 pbl/dados/*.zip
-pbl/modelos/*.pkl
 pbl/mlruns/
 mlruns/
 .vscode/
