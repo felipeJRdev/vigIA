@@ -1,0 +1,10 @@
+pbl/dados/*.csv
+!pbl/dados/lookup_*.csv
+!pbl/dados/mapeamento_*.csv
+pbl/dados/*.zip
+pbl/mlruns/
+mlruns/
+.vscode/
+env/
+__pycache__/
+*.pyc
