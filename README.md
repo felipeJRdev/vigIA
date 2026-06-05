@@ -70,6 +70,8 @@ pbl/
 └── docs/
     ├── DOCUMENTACAO_PBL.md   documentação técnica completa
 
+```
+
 > **Nota:** `dados/`, `modelos/` e `*.pkl`/`*.csv` estão no `.gitignore`. Os arquivos são gerados localmente rodando os scripts na ordem abaixo.
 
 ---
