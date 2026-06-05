@@ -1,0 +1,41 @@
+name: Previsão Diária vigIA
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 03:00 horário de Brasília (UTC-3)
+  workflow_dispatch:       # permite disparo manual pela aba Actions
+
+jobs:
+  prever:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependências
+        run: pip install lightgbm pandas joblib requests numpy
+
+      - name: Rodar pipeline de previsão (E1 + E2)
+        run: python pbl/previsao_leve.py
+
+      - name: Gerar forecast.json
+        run: cd pbl && python exportar_json.py
+
+      - name: Copiar forecast para o frontend
+        run: cp pbl/forecast.json frontend/forecast.json
+
+      - name: Commit e push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add frontend/forecast.json
+          git diff --cached --quiet && echo "Sem mudanças no forecast." || \
+            git commit -m "chore: atualiza previsao $(date -u +%Y-%m-%d)" && git push
