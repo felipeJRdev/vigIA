@@ -48,6 +48,13 @@ mapa = (
 )
 mapa["Municipio_Freq"] = mapa["Contagem"] / total
 mapa = mapa.sort_values("Contagem", ascending=False).reset_index(drop=True)
+# Remove entradas com mesmo nome normalizado (ex: "NIQUELÂNDIA" vs "Niquelândia"),
+# mantendo a de maior Contagem (já ordenado desc). Causa: registros com grafia
+# inconsistente no BDqueimadas geram municípios duplicados com freq quase zero.
+import unicodedata as _ud
+def _norm(s): return "".join(c for c in _ud.normalize("NFD", str(s)) if not _ud.category(c).startswith("M")).lower().strip()
+mapa["_norm"] = mapa["Municipio"].apply(_norm)
+mapa = mapa.drop_duplicates("_norm").drop(columns="_norm").reset_index(drop=True)
 mapa.to_csv(os.path.join(DADOS, "mapeamento_municipio.csv"), index=False)
 print(f"  {len(mapa)} municípios | Top 3: {mapa[['Municipio','Municipio_Freq']].head(3).to_string(index=False)}")
 
