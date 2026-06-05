@@ -21,7 +21,7 @@ jobs:
           python-version: '3.12'
 
       - name: Instalar dependências
-        run: pip install lightgbm pandas joblib requests numpy
+        run: pip install -r pbl/requirements.txt
 
       - name: Rodar pipeline de previsão (E1 + E2)
         run: python pbl/previsao_leve.py
