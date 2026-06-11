@@ -7,7 +7,8 @@ Salva: pbl/forecast.json
 """
 
 import os, glob, json
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import pandas as pd
 
 _HERE      = os.path.dirname(os.path.abspath(__file__))
@@ -79,7 +80,7 @@ for dia in dias:
     ]
 
 out = {
-    "gerado_em": str(date.today()),
+    "gerado_em": datetime.now(ZoneInfo("America/Sao_Paulo")).isoformat(timespec="minutes"),
     "dias": dias,
     "municipios": municipios,
     "celulas": celulas,
@@ -92,7 +93,7 @@ with open(dest, "w", encoding="utf-8") as f:
 print(f"Salvo: {dest}  ({os.path.getsize(dest)/1024:.0f} KB)")
 print("Para atualizar o frontend: copie forecast.json para vigIA/frontend/forecast.json")
 
-print(f"\ngerado_em : {out['gerado_em']}")
+print(f"\ngerado_em : {out['gerado_em']}  (horário de Brasília)")
 print(f"dias      : {dias[0]} → {dias[-1]}")
 print(f"municípios: {len(municipios[dias[0]])} por dia")
 print(f"células   : {len(celulas[dias[0]])} por dia")

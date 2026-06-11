@@ -488,7 +488,14 @@
   /* --------------------------- META / STAMP ------------------------------- */
   function stampMeta() {
     const dt = new Date(state.forecast.generated_at);
-    const txt = `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+    const p = Object.fromEntries(
+      new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        day: '2-digit', month: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      }).formatToParts(dt).map(x => [x.type, x.value])
+    );
+    const txt = `${p.day}/${p.month} ${p.hour}:${p.minute}`;
     $('#stamp-val').textContent = txt;
     const src = state.forecast.source === 'real' ? 'dados reais' : 'dados sintéticos · demo';
     $('#stamp-src').textContent = src;

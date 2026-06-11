@@ -191,7 +191,9 @@ function parseRealForecast(raw, features) {
   const celulas = dias.map(dia => raw.celulas[dia] || []);
 
   return {
-    generated_at: new Date(raw.gerado_em + 'T06:00:00-03:00').toISOString(),
+    generated_at: new Date(
+      raw.gerado_em.includes('T') ? raw.gerado_em : raw.gerado_em + 'T03:00:00-03:00'
+    ).toISOString(),
     model: { accuracy_min: 0.816, accuracy_max: 0.816 },
     days,
     municipios: muni,
