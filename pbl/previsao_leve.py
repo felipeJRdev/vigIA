@@ -90,8 +90,8 @@ def buscar_clima(nome, lat, lon, retries=4):
 
             data      = r.json()["daily"]
             prec_all  = data["precipitation_sum"]  # 30 passado + 1 hoje + 5 previsão = 36
-            prec_hist = prec_all[:30]               # últimos 30 dias
-            prec_prev = prec_all[31:36]             # amanhã → hoje+5 (pula hoje no índice 30)
+            prec_hist = prec_all[:31]               # últimos 30 dias + hoje (índice 30 é valor parcial do dia, aceitável)
+            prec_prev = prec_all[31:36]             # amanhã → hoje+5
             datas_prev = data["time"][31:36]
 
             dias_secos = 0

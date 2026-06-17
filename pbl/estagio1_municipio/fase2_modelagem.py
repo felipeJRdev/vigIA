@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score
-from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, TimeSeriesSplit
 import xgboost as xgb
 import lightgbm as lgbm
 
@@ -51,21 +51,21 @@ ds = pd.read_csv(os.path.join(DADOS, "dataset_municipio.csv"), parse_dates=["Dat
 print(f"  Total: {len(ds):,} | Positivos: {(ds[TARGET]==1).sum():,} ({100*(ds[TARGET]==1).mean():.1f}%)")
 
 print("\n[2/5] Split temporal...")
-treino = ds[ds["Ano"] <= 2022]
+treino = ds[ds["Ano"] <= 2022].sort_values("Data").reset_index(drop=True)
 val    = ds[ds["Ano"] == 2023]
 teste  = ds[ds["Ano"] >= 2024]
 X_tr, y_tr   = treino[FEATURES].values, treino[TARGET].values
 X_val, y_val = val[FEATURES].values,    val[TARGET].values
 X_te,  y_te  = teste[FEATURES].values,  teste[TARGET].values
 rng = np.random.default_rng(SEED)
-idx = rng.choice(len(X_tr), size=min(SEARCH_SAMPLE, len(X_tr)), replace=False)
+idx = np.sort(rng.choice(len(X_tr), size=min(SEARCH_SAMPLE, len(X_tr)), replace=False))
 X_search, y_search = X_tr[idx], y_tr[idx]
 print(f"  Treino: {len(treino):,} | Val: {len(val):,} | Teste: {len(teste):,} | Busca: {len(X_search):,}")
 
 print("\n[3/5] Treinamento e busca de hiperparâmetros...")
 mlflow.set_tracking_uri("file://" + MLRUNS)
 mlflow.set_experiment("vigIA_E1_municipio")
-cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+cv = TimeSeriesSplit(n_splits=5)
 
 def avaliar(nome, modelo, params, elapsed):
     prob_val = modelo.predict_proba(X_val)[:, 1]

@@ -30,9 +30,7 @@ ds = ds.merge(clima[["Cell_Lat","Cell_Lon","Data","Precipitacao","DiaSemChuva"]]
 
 n_nan = ds["DiaSemChuva"].isna().sum()
 if n_nan > 0:
-    print(f"  Aviso: {n_nan:,} linhas sem dado — usando 0 como fallback.")
-ds["DiaSemChuva"]  = ds["DiaSemChuva"].fillna(0)
-ds["Precipitacao"] = ds["Precipitacao"].fillna(0)
+    print(f"  Aviso: {n_nan:,} linhas sem dado climático — mantendo NaN (LightGBM trata nativamente).")
 print(f"  DiaSemChuva máx: {ds['DiaSemChuva'].max():.0f}d | Precipitacao máx: {ds['Precipitacao'].max():.1f}mm")
 
 print("\n[3/3] Salvando dataset_grade.csv atualizado...")

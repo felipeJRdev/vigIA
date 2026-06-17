@@ -35,6 +35,19 @@ go["Mes"]       = go["DataHora"].dt.month
 go["DiaSemana"] = go["DataHora"].dt.dayofweek
 go["Ano"]       = go["DataHora"].dt.year
 
+import unicodedata as _ud
+def _norm(s): return "".join(c for c in _ud.normalize("NFD", str(s)) if not _ud.category(c).startswith("M")).lower().strip()
+
+# Normaliza grafias brutas para a canônica (maior contagem) antes de qualquer groupby.
+# Evita NaN em Municipio_Freq/Lat/Lon no merge posterior.
+_raw_counts = go["Municipio"].value_counts()
+_norm_to_canonical: dict = {}
+for _nome in _raw_counts.index:  # ordenado por contagem decrescente
+    _n = _norm(_nome)
+    if _n not in _norm_to_canonical:
+        _norm_to_canonical[_n] = _nome
+go["Municipio"] = go["Municipio"].map({_nome: _norm_to_canonical[_norm(_nome)] for _nome in _raw_counts.index})
+
 print("\n[2/6] Construindo mapeamento de municípios...")
 total = len(go)
 mapa = (
@@ -51,8 +64,6 @@ mapa = mapa.sort_values("Contagem", ascending=False).reset_index(drop=True)
 # Remove entradas com mesmo nome normalizado (ex: "NIQUELÂNDIA" vs "Niquelândia"),
 # mantendo a de maior Contagem (já ordenado desc). Causa: registros com grafia
 # inconsistente no BDqueimadas geram municípios duplicados com freq quase zero.
-import unicodedata as _ud
-def _norm(s): return "".join(c for c in _ud.normalize("NFD", str(s)) if not _ud.category(c).startswith("M")).lower().strip()
 mapa["_norm"] = mapa["Municipio"].apply(_norm)
 mapa = mapa.drop_duplicates("_norm").drop(columns="_norm").reset_index(drop=True)
 mapa.to_csv(os.path.join(DADOS, "mapeamento_municipio.csv"), index=False)
@@ -110,6 +121,7 @@ climatologia = (
 dataset = pd.concat([positivos, negativos], ignore_index=True)
 dataset["Estacao_Seca"] = dataset["Mes"].apply(lambda m: 1 if m in [6,7,8,9,10] else 0)
 dataset = dataset.merge(mapa[["Municipio","Municipio_Freq","Latitude","Longitude"]], on="Municipio", how="left")
+assert dataset["Municipio_Freq"].notna().all(), "Merge falhou: Municipio_Freq tem NaN — verificar normalização de grafias"
 dataset = dataset.merge(climatologia, on=["Municipio","Mes"], how="left")
 dataset["media_focos_mes_hist"] = dataset["media_focos_mes_hist"].fillna(0)
 

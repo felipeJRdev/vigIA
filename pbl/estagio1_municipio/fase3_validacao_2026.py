@@ -153,8 +153,9 @@ grid = grid.merge(clima26[["Municipio","Data","Precipitacao","DiaSemChuva"]],
                   on=["Municipio","Data"], how="left", suffixes=("_drop",""))
 for col in ["Precipitacao_drop","DiaSemChuva_drop"]:
     if col in grid.columns: grid.drop(columns=[col], inplace=True)
-grid["DiaSemChuva"] = grid["DiaSemChuva"].fillna(0)
-grid["Precipitacao"] = grid["Precipitacao"].fillna(0)
+n_sem_clima = grid["DiaSemChuva"].isna().sum()
+if n_sem_clima > 0:
+    print(f"  Aviso: {n_sem_clima:,} linhas sem dado climático — mantendo NaN (LightGBM trata nativamente).")
 grid.to_csv(os.path.join(RESULTADOS, "dataset_validacao_2026.csv"), index=False)
 
 # 5. Avaliar

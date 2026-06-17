@@ -96,8 +96,9 @@ for year in range(2015, 2026):
     chunk["media_focos_mes_hist"] = chunk["media_focos_mes_hist"].fillna(0)
     chunk = chunk.merge(clima[["Nearest_Municipio","Data","Precipitacao","DiaSemChuva"]],
                         on=["Nearest_Municipio","Data"], how="left")
-    chunk["DiaSemChuva"] = chunk["DiaSemChuva"].fillna(0)
-    chunk["Precipitacao"] = chunk["Precipitacao"].fillna(0)
+    n_sem = chunk["DiaSemChuva"].isna().sum()
+    if n_sem > 0:
+        print(f"    Aviso: {n_sem:,} linhas sem dado climático em {year} — mantendo NaN.")
 
     n_pos = chunk["fogo"].sum(); total_linhas += len(chunk); total_pos += n_pos
     chunk[cols].to_csv(SAIDA, mode="w" if primeiro else "a", header=primeiro, index=False)
