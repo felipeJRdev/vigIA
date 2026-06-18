@@ -15,7 +15,8 @@ import joblib
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from sklearn.metrics import (roc_auc_score, f1_score, precision_score,
+from sklearn.metrics import (roc_auc_score, average_precision_score,
+                             brier_score_loss, f1_score, precision_score,
                              recall_score, confusion_matrix, roc_curve)
 import lightgbm as lgbm
 from itertools import product
@@ -113,15 +114,21 @@ print("\n[5/5] Prevendo e avaliando...")
 prob = modelo_full.predict_proba(grid[FEATURES].values)[:, 1]
 pred = (prob >= 0.5).astype(int)
 y_2026 = grid["fogo"].values
-auc = roc_auc_score(y_2026,prob); rec=recall_score(y_2026,pred)
-prec=precision_score(y_2026,pred); f1=f1_score(y_2026,pred)
-cm=confusion_matrix(y_2026,pred); rec_03=recall_score(y_2026,(prob>=0.3).astype(int))
+auc    = roc_auc_score(y_2026, prob)
+pr_auc = average_precision_score(y_2026, prob)
+brier  = brier_score_loss(y_2026, prob)
+rec    = recall_score(y_2026, pred)
+prec   = precision_score(y_2026, pred)
+f1     = f1_score(y_2026, pred)
+cm     = confusion_matrix(y_2026, pred)
+rec_03 = recall_score(y_2026, (prob>=0.3).astype(int))
 
-print(f"\n  AUC-ROC: {auc:.4f} | Recall@0.5: {rec:.4f} | Recall@0.3: {rec_03:.4f}")
-print(f"  Precisão: {prec:.4f} | TN={cm[0,0]:,} FP={cm[0,1]:,} | FN={cm[1,0]:,} TP={cm[1,1]:,}")
+print(f"\n  AUC-ROC: {auc:.4f} | PR-AUC: {pr_auc:.4f} | Brier: {brier:.4f}")
+print(f"  Recall@0.5: {rec:.4f} | Recall@0.3: {rec_03:.4f} | Precisão: {prec:.4f}")
+print(f"  TN={cm[0,0]:,} FP={cm[0,1]:,} | FN={cm[1,0]:,} TP={cm[1,1]:,}")
 
-pd.DataFrame([{"Modelo":"LightGBM Grade Full 2015-2025","AUC":auc,"F1":f1,
-               "Precisao":prec,"Recall_05":rec,"Recall_03":rec_03,
+pd.DataFrame([{"Modelo":"LightGBM Grade Full 2015-2025","AUC":auc,"PR_AUC":pr_auc,"Brier":brier,
+               "F1":f1,"Precisao":prec,"Recall_05":rec,"Recall_03":rec_03,
                "TP":cm[1,1],"FP":cm[0,1],"TN":cm[0,0],"FN":cm[1,0]}
 ]).to_csv(os.path.join(RESULTADOS,"validacao_grade_2026.csv"),index=False)
 

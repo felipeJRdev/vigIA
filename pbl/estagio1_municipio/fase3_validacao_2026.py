@@ -16,7 +16,8 @@ import joblib
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from sklearn.metrics import (roc_auc_score, f1_score, precision_score,
+from sklearn.metrics import (roc_auc_score, average_precision_score,
+                             brier_score_loss, f1_score, precision_score,
                              recall_score, confusion_matrix, roc_curve)
 import lightgbm as lgbm
 from itertools import product
@@ -109,25 +110,47 @@ for col in ["Precipitacao_drop","DiaSemChuva_drop"]:
 n_sem_clima = grid["DiaSemChuva"].isna().sum()
 if n_sem_clima > 0:
     print(f"  Aviso: {n_sem_clima:,} linhas sem dado climático — mantendo NaN (LightGBM trata nativamente).")
-grid.to_csv(os.path.join(RESULTADOS, "dataset_validacao_2026.csv"), index=False)
 
 # 5. Avaliar
 print("\n[5/6] Prevendo e avaliando...")
 X_2026 = grid[FEATURES].values; y_2026 = grid["fogo"].values
 prob = modelo_full.predict_proba(X_2026)[:, 1]
 pred = (prob >= 0.5).astype(int)
-auc = roc_auc_score(y_2026, prob); rec = recall_score(y_2026, pred)
-prec = precision_score(y_2026, pred); f1 = f1_score(y_2026, pred)
-cm = confusion_matrix(y_2026, pred); rec_03 = recall_score(y_2026, (prob>=0.3).astype(int))
+auc    = roc_auc_score(y_2026, prob)
+pr_auc = average_precision_score(y_2026, prob)
+brier  = brier_score_loss(y_2026, prob)
+rec    = recall_score(y_2026, pred)
+prec   = precision_score(y_2026, pred)
+f1     = f1_score(y_2026, pred)
+cm     = confusion_matrix(y_2026, pred)
+rec_03 = recall_score(y_2026, (prob>=0.3).astype(int))
 
-print(f"\n  AUC-ROC: {auc:.4f} | Recall@0.5: {rec:.4f} | Recall@0.3: {rec_03:.4f}")
-print(f"  Precisão: {prec:.4f} | F1: {f1:.4f}")
+# Captura top-N municípios por dia (métrica operacional)
+grid["prob_fogo"] = prob
+def _captura_top_n(df, n):
+    def _por_dia(g):
+        fires = g["fogo"].sum()
+        return g.nlargest(n, "prob_fogo")["fogo"].sum() / fires if fires > 0 else np.nan
+    return df.groupby("Data").apply(_por_dia).mean(skipna=True)
+
+cap10 = _captura_top_n(grid, 10)
+cap20 = _captura_top_n(grid, 20)
+cap30 = _captura_top_n(grid, 30)
+
+print(f"\n  AUC-ROC: {auc:.4f} | PR-AUC: {pr_auc:.4f} | Brier: {brier:.4f}")
+print(f"  Recall@0.5: {rec:.4f} | Recall@0.3: {rec_03:.4f} | Precisão: {prec:.4f} | F1: {f1:.4f}")
 print(f"  TN={cm[0,0]:,} FP={cm[0,1]:,} | FN={cm[1,0]:,} TP={cm[1,1]:,}")
+print(f"  Captura top-10/20/30 municípios por dia: {cap10:.1%} / {cap20:.1%} / {cap30:.1%}")
 
 pd.DataFrame([{"Modelo":"LightGBM Município Full 2015-2025",
-               "AUC":auc,"F1":f1,"Precisao":prec,"Recall_05":rec,"Recall_03":rec_03,
+               "AUC":auc,"PR_AUC":pr_auc,"Brier":brier,
+               "F1":f1,"Precisao":prec,"Recall_05":rec,"Recall_03":rec_03,
+               "Cap_Top10":cap10,"Cap_Top20":cap20,"Cap_Top30":cap30,
                "TP":cm[1,1],"FP":cm[0,1],"TN":cm[0,0],"FN":cm[1,0]}
 ]).to_csv(os.path.join(RESULTADOS, "validacao_municipio_2026.csv"), index=False)
+
+# Salva dataset com prob_fogo para fase3c_baseline.py
+grid.to_csv(os.path.join(RESULTADOS, "dataset_validacao_2026.csv"), index=False)
 
 # 6. Gráficos
 print("\n[6/6] Gerando gráficos...")

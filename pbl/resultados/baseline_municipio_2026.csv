@@ -1,0 +1,5 @@
+Ranqueador,AUC,Cap_Top10,Cap_Top20
+media_focos_mes_hist,0.7215,0.1228,0.2082
+Municipio_Freq,0.7447,0.1923,0.2816
+media_focos_mes_hist+DiaSemChuva,0.723,0.1228,0.2091
+Modelo LightGBM,0.8113,0.2234,0.3346
