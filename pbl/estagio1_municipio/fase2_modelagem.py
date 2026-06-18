@@ -33,10 +33,15 @@ GRAFICOS   = os.path.join(PBL, "graficos")
 MLRUNS     = os.path.join(PBL, "mlruns")
 os.makedirs(GRAFICOS, exist_ok=True)
 
-FEATURES = [
+FEATURES = [  # nomes originais — armazenados no .pkl e usados em produção
     "Mes","DiaSemana","Estacao_Seca",
     "Latitude","Longitude","Municipio_Freq",
     "DiaSemChuva","Precipitacao","media_focos_mes_hist",
+]
+FEATURES_TREINO = [  # colunas _train para avaliação sem vazamento temporal (B2)
+    "Mes","DiaSemana","Estacao_Seca",
+    "Latitude","Longitude","Municipio_Freq_train",
+    "DiaSemChuva","Precipitacao","media_focos_mes_hist_train",
 ]
 TARGET        = "fogo"
 SEED          = 42
@@ -54,9 +59,9 @@ print("\n[2/5] Split temporal...")
 treino = ds[ds["Ano"] <= 2022].sort_values("Data").reset_index(drop=True)
 val    = ds[ds["Ano"] == 2023]
 teste  = ds[ds["Ano"] >= 2024]
-X_tr, y_tr   = treino[FEATURES].values, treino[TARGET].values
-X_val, y_val = val[FEATURES].values,    val[TARGET].values
-X_te,  y_te  = teste[FEATURES].values,  teste[TARGET].values
+X_tr, y_tr   = treino[FEATURES_TREINO].values, treino[TARGET].values
+X_val, y_val = val[FEATURES_TREINO].values,    val[TARGET].values
+X_te,  y_te  = teste[FEATURES_TREINO].values,  teste[TARGET].values
 rng = np.random.default_rng(SEED)
 idx = np.sort(rng.choice(len(X_tr), size=min(SEARCH_SAMPLE, len(X_tr)), replace=False))
 X_search, y_search = X_tr[idx], y_tr[idx]

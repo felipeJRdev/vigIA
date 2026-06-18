@@ -1,12 +1,12 @@
 """
 vigIA — Estágio 1 | Fase 1: Dataset de classificação por município
 Entrada:  ../../dataset_queimadas_completo.csv
+          ../dados/clima_historico.csv
 Saída:    ../dados/dataset_municipio.csv
           ../dados/mapeamento_municipio.csv
 """
 
 import os, time
-import numpy as np
 import pandas as pd
 from itertools import product
 
@@ -14,7 +14,7 @@ _HERE      = os.path.dirname(os.path.abspath(__file__))
 PBL        = os.path.dirname(_HERE)
 BASE       = os.path.dirname(PBL)
 DADOS      = os.path.join(PBL, "dados")
-RAW        = os.path.join(BASE, "dataset_queimadas_completo.csv")
+RAW        = os.path.join(DADOS, "dataset_queimadas_completo.csv")
 
 print("=" * 60)
 print("  vigIA E1 — Fase 1: Dataset de Classificação por Município")
@@ -69,16 +69,22 @@ mapa = mapa.drop_duplicates("_norm").drop(columns="_norm").reset_index(drop=True
 mapa.to_csv(os.path.join(DADOS, "mapeamento_municipio.csv"), index=False)
 print(f"  {len(mapa)} municípios | Top 3: {mapa[['Municipio','Municipio_Freq']].head(3).to_string(index=False)}")
 
+# B2: versão _train (≤ 2022) para avaliação sem vazamento temporal
+_go_train = go[go["Ano"] <= 2022]
+_freq_train = (_go_train.groupby("Municipio")["Municipio"]
+               .count().div(len(_go_train))
+               .rename("Municipio_Freq_train").reset_index())
+mapa = mapa.merge(_freq_train, on="Municipio", how="left")
+mapa["Municipio_Freq_train"] = mapa["Municipio_Freq_train"].fillna(0)
+
 print("\n[3/6] Gerando exemplos positivos...")
 positivos = (
     go.groupby(["Municipio", "Data"])
     .agg(
-        Ano          = ("Ano",          "first"),
-        Mes          = ("Mes",          "first"),
-        DiaSemana    = ("DiaSemana",    "first"),
-        DiaSemChuva  = ("DiaSemChuva",  "mean"),
-        Precipitacao = ("Precipitacao", "mean"),
-        n_focos_dia  = ("Municipio",    "count"),
+        Ano         = ("Ano",       "first"),
+        Mes         = ("Mes",       "first"),
+        DiaSemana   = ("DiaSemana", "first"),
+        n_focos_dia = ("Municipio", "count"),
     )
     .reset_index()
 )
@@ -102,35 +108,55 @@ negativos_raw = [
 print(f"  {len(negativos_raw):,} negativos em {time.time()-t0:.1f}s")
 
 negativos = pd.DataFrame(negativos_raw, columns=["Municipio", "Data"])
-negativos["Ano"]          = pd.to_datetime(negativos["Data"]).dt.year
-negativos["Mes"]          = pd.to_datetime(negativos["Data"]).dt.month
-negativos["DiaSemana"]    = pd.to_datetime(negativos["Data"]).dt.dayofweek
-negativos["DiaSemChuva"]  = np.nan
-negativos["Precipitacao"] = np.nan
-negativos["n_focos_dia"]  = 0
-negativos["fogo"]         = 0
+negativos["Ano"]         = pd.to_datetime(negativos["Data"]).dt.year
+negativos["Mes"]         = pd.to_datetime(negativos["Data"]).dt.month
+negativos["DiaSemana"]   = pd.to_datetime(negativos["Data"]).dt.dayofweek
+negativos["n_focos_dia"] = 0
+negativos["fogo"]        = 0
 
 print("\n[5/6] Adicionando features de contexto...")
-climatologia = (
+# B2: climatologia em duas versões — _full (todos os anos) e _train (≤ 2022)
+climatologia_full = (
     positivos.groupby(["Municipio", "Mes"])["n_focos_dia"]
-    .mean()
-    .reset_index()
+    .mean().reset_index()
     .rename(columns={"n_focos_dia": "media_focos_mes_hist"})
 )
+climatologia_train = (
+    positivos[positivos["Ano"] <= 2022].groupby(["Municipio", "Mes"])["n_focos_dia"]
+    .mean().reset_index()
+    .rename(columns={"n_focos_dia": "media_focos_mes_hist_train"})
+)
+climatologia = climatologia_full.merge(climatologia_train, on=["Municipio","Mes"], how="left")
+climatologia["media_focos_mes_hist_train"] = climatologia["media_focos_mes_hist_train"].fillna(0)
 
 dataset = pd.concat([positivos, negativos], ignore_index=True)
 dataset["Estacao_Seca"] = dataset["Mes"].apply(lambda m: 1 if m in [6,7,8,9,10] else 0)
-dataset = dataset.merge(mapa[["Municipio","Municipio_Freq","Latitude","Longitude"]], on="Municipio", how="left")
+dataset = dataset.merge(
+    mapa[["Municipio","Municipio_Freq","Municipio_Freq_train","Latitude","Longitude"]],
+    on="Municipio", how="left"
+)
 assert dataset["Municipio_Freq"].notna().all(), "Merge falhou: Municipio_Freq tem NaN — verificar normalização de grafias"
+# B1: clima Open-Meteo para positivos e negativos (elimina vazamento de fonte)
+dataset["Data"] = pd.to_datetime(dataset["Data"])
+clima_hist = pd.read_csv(os.path.join(DADOS, "clima_historico.csv"), parse_dates=["Data"])
+dataset = dataset.merge(
+    clima_hist[["Municipio","Data","Precipitacao","DiaSemChuva"]],
+    on=["Municipio","Data"], how="left"
+)
+n_sem = dataset["DiaSemChuva"].isna().sum()
+if n_sem > 0:
+    print(f"  Aviso: {n_sem:,} linhas sem dado climático — mantendo NaN.")
 dataset = dataset.merge(climatologia, on=["Municipio","Mes"], how="left")
-dataset["media_focos_mes_hist"] = dataset["media_focos_mes_hist"].fillna(0)
+dataset["media_focos_mes_hist"]       = dataset["media_focos_mes_hist"].fillna(0)
+dataset["media_focos_mes_hist_train"] = dataset["media_focos_mes_hist_train"].fillna(0)
 
 print("\n[6/6] Salvando...")
 dataset = dataset.sort_values(["Data","Municipio"]).reset_index(drop=True)
 cols = [
     "Municipio","Data","Ano","Mes","DiaSemana","Estacao_Seca",
-    "Latitude","Longitude","Municipio_Freq",
-    "DiaSemChuva","Precipitacao","n_focos_dia","media_focos_mes_hist","fogo"
+    "Latitude","Longitude","Municipio_Freq","Municipio_Freq_train",
+    "DiaSemChuva","Precipitacao","n_focos_dia",
+    "media_focos_mes_hist","media_focos_mes_hist_train","fogo"
 ]
 dataset[cols].to_csv(os.path.join(DADOS, "dataset_municipio.csv"), index=False)
 

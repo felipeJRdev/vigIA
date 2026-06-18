@@ -15,7 +15,7 @@ _HERE      = os.path.dirname(os.path.abspath(__file__))
 PBL        = os.path.dirname(_HERE)
 BASE       = os.path.dirname(PBL)
 DADOS      = os.path.join(PBL, "dados")
-RAW        = os.path.join(BASE, "dataset_queimadas_completo.csv")
+RAW        = os.path.join(DADOS, "dataset_queimadas_completo.csv")
 
 MIN_OCORRENCIAS = 5
 
@@ -40,6 +40,14 @@ total_focos = len(go)
 contagem = go.groupby(["Cell_Lat","Cell_Lon"]).size().reset_index(name="Contagem")
 contagem = contagem[contagem["Contagem"] >= MIN_OCORRENCIAS].reset_index(drop=True)
 contagem["Cell_Freq"] = contagem["Contagem"] / total_focos
+# B2: Cell_Freq_train — frequência calculada apenas com dados ≤ 2022
+go_train = go[go["Ano"] <= 2022]
+contagem_train = (go_train
+                  .merge(contagem[["Cell_Lat","Cell_Lon"]], on=["Cell_Lat","Cell_Lon"], how="inner")
+                  .groupby(["Cell_Lat","Cell_Lon"]).size()
+                  .reset_index(name="Contagem_train"))
+contagem = contagem.merge(contagem_train, on=["Cell_Lat","Cell_Lon"], how="left")
+contagem["Cell_Freq_train"] = contagem["Contagem_train"].fillna(0) / len(go_train)
 print(f"  Células com ≥{MIN_OCORRENCIAS} ocorrências: {len(contagem):,}")
 
 mapa_mun = pd.read_csv(os.path.join(DADOS, "mapeamento_municipio.csv"))
@@ -65,17 +73,25 @@ clima = clima.rename(columns={"Municipio": "Nearest_Municipio"})
 print(f"  {len(clima):,} registros climáticos")
 
 n_anos = go["Ano"].nunique()
-climatologia = (positivos.groupby(["Cell_Lat","Cell_Lon","Mes"]).size()
-                .div(n_anos).reset_index(name="media_focos_mes_hist"))
+n_anos_train = go[go["Ano"] <= 2022]["Ano"].nunique()
+# B2: climatologia em duas versões — _full (todos os anos) e _train (≤ 2022)
+climatologia_full  = (positivos.groupby(["Cell_Lat","Cell_Lon","Mes"]).size()
+                      .div(n_anos).reset_index(name="media_focos_mes_hist"))
+climatologia_train = (positivos[positivos["Ano"] <= 2022]
+                      .groupby(["Cell_Lat","Cell_Lon","Mes"]).size()
+                      .div(n_anos_train).reset_index(name="media_focos_mes_hist_train"))
+climatologia = climatologia_full.merge(climatologia_train, on=["Cell_Lat","Cell_Lon","Mes"], how="left")
+climatologia["media_focos_mes_hist_train"] = climatologia["media_focos_mes_hist_train"].fillna(0)
 
 print("\n[5/6] Gerando grid completo por ano (chunks ~1M linhas)...")
 print(f"  Estimativa: {len(contagem):,} células × 3652 dias ≈ {len(contagem)*3652/1e6:.1f}M linhas")
 
 SAIDA = os.path.join(DADOS, "dataset_grade.csv")
 cols  = ["Cell_Lat","Cell_Lon","Nearest_Municipio","Data","Ano","Mes","DiaSemana",
-         "Estacao_Seca","Cell_Freq","DiaSemChuva","Precipitacao","media_focos_mes_hist","fogo"]
+         "Estacao_Seca","Cell_Freq","Cell_Freq_train",
+         "DiaSemChuva","Precipitacao","media_focos_mes_hist","media_focos_mes_hist_train","fogo"]
 
-cells_ref = contagem[["Cell_Lat","Cell_Lon","Cell_Freq","Nearest_Municipio"]].copy()
+cells_ref = contagem[["Cell_Lat","Cell_Lon","Cell_Freq","Cell_Freq_train","Nearest_Municipio"]].copy()
 cells_ref["_key"] = 1
 total_linhas = 0; total_pos = 0; t_total = time.time(); primeiro = True
 
@@ -93,7 +109,8 @@ for year in range(2015, 2026):
     chunk["fogo"] = chunk["fogo"].fillna(0).astype(int)
 
     chunk = chunk.merge(climatologia, on=["Cell_Lat","Cell_Lon","Mes"], how="left")
-    chunk["media_focos_mes_hist"] = chunk["media_focos_mes_hist"].fillna(0)
+    chunk["media_focos_mes_hist"]       = chunk["media_focos_mes_hist"].fillna(0)
+    chunk["media_focos_mes_hist_train"] = chunk["media_focos_mes_hist_train"].fillna(0)
     chunk = chunk.merge(clima[["Nearest_Municipio","Data","Precipitacao","DiaSemChuva"]],
                         on=["Nearest_Municipio","Data"], how="left")
     n_sem = chunk["DiaSemChuva"].isna().sum()

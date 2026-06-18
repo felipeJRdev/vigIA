@@ -3,13 +3,13 @@ vigIA — Estágio 1 | Fase 3: Retreino 2015-2025 + Validação 2026
 Entrada:  ../dados/dataset_municipio.csv
           ../dados/mapeamento_municipio.csv
           ../dados/bdqueimadas_2026-01-01_2026-06-03.csv
+          ../dados/clima_2026.csv          (gerado por fase1d_clima_2026.py)
 Saída:    ../modelos/municipio_full.pkl   (produção)
-          ../dados/clima_2026.csv
           ../resultados/dataset_validacao_2026.csv
           ../resultados/validacao_municipio_2026.csv
 """
 
-import os, time, requests, warnings
+import os, time, warnings
 import numpy as np
 import pandas as pd
 import joblib
@@ -63,9 +63,9 @@ if not params:
 t0 = time.time()
 modelo_full.fit(X_full, y_full)
 print(f"  Concluído em {time.time()-t0:.0f}s")
-joblib.dump({"modelo": modelo_full, "features": FEATURES, "nome": "LightGBM Município Full 2015-2025"},
-            os.path.join(MODELOS, "municipio_full.pkl"))
-print("  Salvo: modelos/municipio_full.pkl")
+joblib.dump({"modelo": modelo_full, "features": FEATURES, "nome": "LightGBM Município Full 2015-2025 (corrigido)"},
+            os.path.join(MODELOS, "municipio_full_corrigido.pkl"))
+print("  Salvo: modelos/municipio_full_corrigido.pkl")
 
 # 2. Carregar dados 2026
 print("\n[2/6] Carregando focos reais 2026...")
@@ -93,61 +93,14 @@ grid["media_focos_mes_hist"] = grid["media_focos_mes_hist"].fillna(0)
 print(f"  {len(grid):,} linhas | Positivos: {grid['fogo'].sum():,} ({100*grid['fogo'].mean():.1f}%)")
 
 # 4. Clima 2026
-print("\n[4/6] Baixando clima 2026 (Open-Meteo)...")
+print("\n[4/6] Aplicando clima 2026...")
 CLIMA_2026 = os.path.join(DADOS, "clima_2026.csv")
-LIMIAR = 0.1
+if not os.path.exists(CLIMA_2026):
+    raise FileNotFoundError(
+        "clima_2026.csv não encontrado. Execute primeiro:\n"
+        "  python3 estagio1_municipio/fase1d_clima_2026.py"
+    )
 
-def calc_dias_sem_chuva(series, limiar=LIMIAR):
-    dias, cont = [], 0
-    for p in series:
-        if pd.isna(p) or p < limiar: cont += 1
-        else: cont = 0
-        dias.append(cont)
-    return dias
-
-def baixar_clima_2026(nome, lat, lon, retries=5):
-    for t in range(retries):
-        try:
-            r = requests.get(
-                "https://archive-api.open-meteo.com/v1/archive",
-                params={"latitude": round(lat,4), "longitude": round(lon,4),
-                        "start_date": "2025-12-01", "end_date": str(data_fim),
-                        "daily": "precipitation_sum", "timezone": "America/Sao_Paulo"},
-                timeout=30)
-            if r.status_code == 429:
-                espera = int(r.headers.get("Retry-After", 60))
-                print(f"\n    Rate limit — aguardando {espera}s...", end=" ", flush=True)
-                time.sleep(espera); continue
-            r.raise_for_status()
-            dados = r.json()["daily"]
-            df = pd.DataFrame({"Municipio": nome, "Data": pd.to_datetime(dados["time"]),
-                                "Precipitacao": dados["precipitation_sum"]})
-            df["DiaSemChuva"] = calc_dias_sem_chuva(df["Precipitacao"])
-            return df[df["Data"].dt.year == 2026]
-        except Exception as e:
-            if t < retries - 1: time.sleep(15 * (2**t))
-            else: print(f"ERRO: {e}"); return None
-
-municipios_feitos = set()
-if os.path.exists(CLIMA_2026):
-    feitos = pd.read_csv(CLIMA_2026, usecols=["Municipio"])["Municipio"].unique()
-    municipios_feitos = set(feitos)
-    print(f"  Retomando: {len(municipios_feitos)} municípios já baixados.")
-
-for i, row in mapa.iterrows():
-    nome = row["Municipio"]
-    if nome in municipios_feitos: continue
-    print(f"  [{i+1:3d}/{len(mapa)}] {nome:<35}", end=" ", flush=True)
-    df_m = baixar_clima_2026(nome, row["Latitude"], row["Longitude"])
-    if df_m is not None:
-        modo = "a" if os.path.exists(CLIMA_2026) else "w"
-        df_m.to_csv(CLIMA_2026, mode=modo, header=not os.path.exists(CLIMA_2026), index=False)
-        print(f"✓ max_seco={df_m['DiaSemChuva'].max()}")
-    else:
-        print("✗")
-    time.sleep(1.5)
-
-print("\n  Aplicando clima no grid...")
 clima26 = pd.read_csv(CLIMA_2026, parse_dates=["Data"])
 grid = grid.merge(clima26[["Municipio","Data","Precipitacao","DiaSemChuva"]],
                   on=["Municipio","Data"], how="left", suffixes=("_drop",""))
@@ -196,6 +149,6 @@ fig.tight_layout(); fig.savefig(os.path.join(GRAFICOS, "e1_validacao_2026_top_mu
 
 print(f"\n{'='*65}")
 print(f"  AUC-ROC: {auc:.4f} | Recall@0.5: {rec:.4f} | Recall@0.3: {rec_03:.4f}")
-print(f"  Salvo: modelos/municipio_full.pkl")
+print(f"  Salvo: modelos/municipio_full_corrigido.pkl")
 print(f"{'='*65}")
 print("\n[OK] E1 Fase 3 concluída!")

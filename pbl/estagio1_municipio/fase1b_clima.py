@@ -5,6 +5,7 @@ Saída:    ../dados/clima_historico.csv
 """
 
 import os, time, requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 
 _HERE        = os.path.dirname(os.path.abspath(__file__))
@@ -13,6 +14,7 @@ DADOS        = os.path.join(PBL, "dados")
 MAPA         = os.path.join(DADOS, "mapeamento_municipio.csv")
 SAIDA        = os.path.join(DADOS, "clima_historico.csv")
 LIMIAR_CHUVA = 0.1
+MAX_WORKERS  = 3 
 
 print("=" * 60)
 print("  vigIA E1 — Fase 1b: Clima Histórico (Open-Meteo)")
@@ -20,7 +22,6 @@ print("=" * 60)
 
 mapa = pd.read_csv(MAPA)
 print(f"\n  {len(mapa)} municípios | 2015-01-01 → 2025-12-31")
-print(f"  Estimativa: ~{len(mapa)*1.2/60:.0f} min\n")
 
 def calc_dias_sem_chuva(precip_series, limiar=LIMIAR_CHUVA):
     dias, cont = [], 0
@@ -49,7 +50,7 @@ def baixar_municipio(nome, lat, lon, retries=5):
             )
             if r.status_code == 429:
                 espera = int(r.headers.get("Retry-After", 60))
-                print(f"\n    Rate limit (429) — aguardando {espera}s...", end=" ", flush=True)
+                print(f"\n    Rate limit (429) — aguardando {espera}s...", flush=True)
                 time.sleep(espera)
                 continue
             r.raise_for_status()
@@ -65,37 +66,56 @@ def baixar_municipio(nome, lat, lon, retries=5):
             if tentativa < retries - 1:
                 time.sleep(15 * (2 ** tentativa))
             else:
-                print(f"    ERRO: {e}")
+                print(f"    ERRO {nome}: {e}")
                 return None
 
+# Cache: pula municípios já baixados em execuções anteriores
 municipios_feitos = set()
 if os.path.exists(SAIDA):
     feitos = pd.read_csv(SAIDA, usecols=["Municipio"])["Municipio"].unique()
     municipios_feitos = set(feitos)
-    print(f"  Retomando: {len(municipios_feitos)} municípios já baixados.\n")
+    print(f"  Retomando: {len(municipios_feitos)} municípios já no cache.")
 
-erros = []
-for i, row in mapa.iterrows():
-    nome = row["Municipio"]
-    if nome in municipios_feitos:
-        continue
-    print(f"  [{i+1:3d}/{len(mapa)}] {nome:<35}", end=" ", flush=True)
-    t0 = time.time()
-    df_mun = baixar_municipio(nome, row["Latitude"], row["Longitude"])
-    if df_mun is not None:
-        modo   = "a" if os.path.exists(SAIDA) else "w"
-        header = not os.path.exists(SAIDA)
-        df_mun.to_csv(SAIDA, mode=modo, header=header, index=False)
-        print(f"✓ {time.time()-t0:.1f}s | max_seco={df_mun['DiaSemChuva'].max()}")
-    else:
-        erros.append(nome)
-        print("✗ FALHOU")
-    time.sleep(1.5)
+pendentes = mapa[~mapa["Municipio"].isin(municipios_feitos)].reset_index(drop=True)
+n_erros = 0
+novos_count = 0
+
+if len(pendentes) == 0:
+    print("  Todos os municípios já baixados — usando cache.")
+else:
+    print(f"  Baixando {len(pendentes)} municípios em paralelo (workers={MAX_WORKERS})...\n")
+
+    def _worker(row):
+        return row["Municipio"], baixar_municipio(row["Municipio"], row["Latitude"], row["Longitude"])
+
+    erros, concluidos = [], 0
+    file_exists = os.path.exists(SAIDA)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(_worker, row): row["Municipio"]
+                   for _, row in pendentes.iterrows()}
+        for future in as_completed(futures):
+            nome, df_m = future.result()
+            concluidos += 1
+            if df_m is not None:
+                # Grava imediatamente — Ctrl+C não perde o que já foi baixado
+                df_m.to_csv(SAIDA, mode="a" if file_exists else "w",
+                            header=not file_exists, index=False)
+                file_exists = True
+                novos_count += 1
+                print(f"  [{concluidos:3d}/{len(pendentes)}] {nome:<35} ✓ max_seco={df_m['DiaSemChuva'].max()}", flush=True)
+            else:
+                erros.append(nome)
+                print(f"  [{concluidos:3d}/{len(pendentes)}] {nome:<35} ✗ FALHOU", flush=True)
+
+    if novos_count:
+        print(f"\n  Salvos: {novos_count} municípios em dados/clima_historico.csv")
+
+    n_erros = len(erros)
+    if n_erros:
+        print(f"  [AVISO] {n_erros} falhas: {erros}")
 
 print(f"\n{'='*60}")
-print(f"  Municípios baixados: {len(mapa)-len(erros)}/{len(mapa)}")
-if erros:
-    print(f"  Falhas: {erros}")
+print(f"  Total no cache: {len(municipios_feitos) + novos_count}/{len(mapa)}")
 print(f"  Salvo: dados/clima_historico.csv")
 print(f"{'='*60}")
 print("\n[OK] E1 Fase 1b concluída!")

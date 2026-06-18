@@ -4,7 +4,7 @@ Entrada:  ../dados/dataset_grade.csv
           ../dados/mapeamento_grade.csv
           ../dados/bdqueimadas_2026-01-01_2026-06-03.csv
           ../dados/clima_2026.csv
-Saída:    ../modelos/grade_full.pkl   (produção)
+Saída:    ../modelos/grade_full_corrigido.pkl   (produção)
           ../resultados/validacao_grade_2026.csv
 """
 
@@ -40,17 +40,15 @@ print("=" * 65)
 print("  vigIA E2 — Fase 3: Retreino 2015-2025 + Validação 2026 Grade")
 print("=" * 65)
 
-# 1. Retreinar com LightGBM (recall > XGBoost que "ganhou" no AUC)
+# 1. Retreinar com LightGBM (produção: suporte nativo a NaN e inferência rápida)
 print("\n[1/5] Retreinando LightGBM grade completo (2015-2025)...")
 artefato = joblib.load(os.path.join(MODELOS, "grade_avaliacao.pkl"))
-params   = artefato.get("params", {})
+lgbm_params = artefato.get("lgbm_params", {})
 ds = pd.read_csv(os.path.join(DADOS, "dataset_grade.csv"))
 X_full, y_full = ds[FEATURES].values, ds["fogo"].values
 print(f"  Amostras: {len(ds):,} | Positivos: {y_full.sum():,} ({100*y_full.mean():.1f}%)")
-print(f"  Params: {params}")
+print(f"  Params LightGBM: {lgbm_params}")
 
-lgbm_params = {k: v for k, v in params.items()
-               if k in ["n_estimators","max_depth","learning_rate","num_leaves","subsample","colsample_bytree"]}
 modelo_full = lgbm.LGBMClassifier(
     **lgbm_params, class_weight="balanced", n_jobs=-1, random_state=42, verbose=-1
 ) if lgbm_params else lgbm.LGBMClassifier(
@@ -62,8 +60,8 @@ t0 = time.time()
 modelo_full.fit(X_full, y_full)
 print(f"  Treino concluído em {time.time()-t0:.0f}s")
 joblib.dump({"modelo": modelo_full, "features": FEATURES, "nome": "LightGBM Grade Full 2015-2025"},
-            os.path.join(MODELOS, "grade_full.pkl"))
-print("  Salvo: modelos/grade_full.pkl")
+            os.path.join(MODELOS, "grade_full_corrigido.pkl"))
+print("  Salvo: modelos/grade_full_corrigido.pkl")
 
 # 2. Carregar dados 2026
 print("\n[2/5] Carregando dados de 2026...")
@@ -106,8 +104,9 @@ clima26 = pd.read_csv(os.path.join(DADOS, "clima_2026.csv"), parse_dates=["Data"
 clima26 = clima26.rename(columns={"Municipio": "Nearest_Municipio"})
 grid = grid.merge(clima26[["Nearest_Municipio","Data","Precipitacao","DiaSemChuva"]],
                   on=["Nearest_Municipio","Data"], how="left")
-grid["DiaSemChuva"] = grid["DiaSemChuva"].fillna(0)
-grid["Precipitacao"] = grid["Precipitacao"].fillna(0)
+n_sem_clima = grid["DiaSemChuva"].isna().sum()
+if n_sem_clima > 0:
+    print(f"  Aviso: {n_sem_clima:,} linhas sem dado climático — mantendo NaN (LightGBM trata nativamente).")
 
 # 5. Prever e avaliar
 print("\n[5/5] Prevendo e avaliando...")
@@ -146,6 +145,6 @@ fig.tight_layout(); fig.savefig(os.path.join(GRAFICOS,"e2_validacao_2026_mapa.pn
 
 print(f"\n{'='*65}")
 print(f"  AUC: {auc:.4f} | Recall@0.5: {rec:.4f} | Recall@0.3: {rec_03:.4f}")
-print(f"  Salvo: modelos/grade_full.pkl")
+print(f"  Salvo: modelos/grade_full_corrigido.pkl")
 print(f"{'='*65}")
 print("\n[OK] E2 Fase 3 concluída!")
