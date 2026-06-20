@@ -177,9 +177,10 @@ Retreinado nas amostras completas (2015–2025) → `modelos/municipio_full.pkl`
 | Métrica | Valor |
 |---|---|
 | AUC-ROC | **0,816** |
-| Recall @0,5 | 47,4% |
-| Recall @0,3 | 73,8% |
-| Precisão @0,3 | 12,7% |
+| PR-AUC | (ver resultado de `validacao_municipio_2026.csv`) |
+| Recall (limiar 0,5) | 47,4% |
+| Recall (limiar 0,3) | 73,8% |
+| Precisão (limiar 0,3) | 12,7% |
 
 O recall cai em Jan–Jun porque é a estação chuvosa — focos são raros (4,9% dos dias vs 14% no treino). O **AUC de 0,816** confirma que a ordenação dos municípios permanece correta mesmo na chuva.
 
@@ -199,6 +200,17 @@ Um município é considerado "alertado" se tiver ao menos um dia com probabilida
 - Top 10% dos pares monitorados → captura **43,6%** dos fogos reais
 - Top 20% dos pares monitorados → captura **62,7%** dos fogos reais
 - 4,4× melhor que seleção aleatória no top 10%
+
+**Comparação com baselines de climatologia** (`fase3c_baseline.py`):
+
+| Ranqueador | AUC | Captura top 10% | Captura top 20% |
+|---|---|---|---|
+| `media_focos_mes_hist` | ~0,73 | — | — |
+| `Municipio_Freq` | **~0,749** | — | — |
+| `media + DiaSemChuva` | ~0,75 | — | — |
+| **Modelo LightGBM** | **0,816** | **43,6%** | **62,7%** |
+
+Delta sobre o melhor baseline: **+0,067** — melhoria significativa (threshold mínimo adotado: 0,02). O `Municipio_Freq` é o baseline mais forte; a frequência histórica já carrega muito sinal, mas o modelo adiciona sazonalidade climática que os baselines ignoram.
 
 ### 4.4 Sistema de Previsão 5 Dias (Fase 4)
 
@@ -275,8 +287,8 @@ Retreinado em 18.394.404 amostras (2015–2025) → `modelos/grade_full.pkl`
 | Métrica | Município | Grade (clima 0,5°) |
 |---|---|---|
 | AUC-ROC 2026 | **0,816** | 0,710 |
-| Recall @0,5 | **47,4%** | 41,6% |
-| Recall @0,3 | **73,8%** | 66,6% |
+| Recall (limiar 0,5) | **47,4%** | 41,6% |
+| Recall (limiar 0,3) | **73,8%** | 66,6% |
 
 O gap em relação ao município é estrutural: células 0,1° têm menos histórico individual e o problema é intrinsecamente mais difícil (11km vs município inteiro).
 
@@ -330,23 +342,30 @@ O frontend é uma aplicação estática hospedada no **Vercel**, disponível em 
 - `app.js` lê `forecast.json` e renderiza o mapa com Leaflet
 
 **Funcionalidades:**
-- Mapa coroplético dos 244 municípios colorido por nível de risco
-- Cores: ALTO ≥70% (vermelho), MÉDIO 40–70% (laranja), BAIXO <40% (verde)
+- Mapa coroplético dos 244 municípios colorido por **risco relativo** (percentil dentro do dia)
+- Cores: **ALTO risco** = top 10% (percentil ≥ 90, vermelho) · **Atenção** = top 10–30% (percentil 70–90, âmbar) · **Calmo** = demais 70% (verde)
 - Barra de navegação para selecionar entre os próximos 5 dias de previsão
-- Ranking lateral com municípios ordenados por probabilidade decrescente
+- Ranking lateral com municípios ordenados por risco relativo decrescente — exibe "top X%" (posição relativa entre os 244 municípios no dia)
 - **Clique no município:** drill-down mostrando células 0,1° internas coloridas por risco relativo
-- Hover com tooltip: probabilidade, risco, dias sem chuva
+- Hover com tooltip: posição relativa ("top X%"), categoria de risco, dias sem chuva
+- **Filtro de zonas:** slider "mostrar apenas top X%" — oculta células abaixo do threshold escolhido
+
+**Por que exibir percentil em vez de probabilidade bruta:**
+
+O `class_weight="balanced"` inflata as probabilidades (Brier score piora em relação ao baseline ingênuo). O modelo é excelente em **ordenar** municípios por risco (AUC 0,816), mas os valores absolutos de probabilidade não devem ser lidos como frequência real de ocorrência. Exibir a posição relativa ("top 5%") é honesto: informa onde concentrar atenção sem fazer promessas sobre calibração.
 
 ---
 
-## 7. Abordagem: Ranking por Probabilidade
+## 7. Abordagem: Ranking por Risco Relativo
 
 Em vez de um limiar binário fixo ("vai ter fogo? sim/não"), o sistema usa os modelos como **ferramentas de ranqueamento**:
 
-- **Estágio 1:** ordena os 244 municípios por probabilidade → gestor vê os mais arriscados no topo
-- **Estágio 2:** ordena as células dentro de cada município de alto risco → identifica subáreas críticas
+- **Estágio 1:** ordena os 244 municípios por probabilidade → o percentil diário determina a posição relativa exibida ("top 5%", "top 30%", etc.)
+- **Estágio 2:** ordena as células dentro de cada município → identifica subáreas críticas dentro do município selecionado
 
-**Vantagem do ranking:** o AUC garante que a ordenação está correta independentemente do limiar. AUC = 0,816 significa que em 81,6% das comparações (município com fogo vs sem fogo), o modelo classifica corretamente qual tem maior risco.
+**Vantagem do ranking:** o AUC garante que a ordenação está correta independentemente da calibração. AUC = 0,816 significa que em 81,6% das comparações (município com fogo vs sem fogo), o modelo classifica corretamente qual tem maior risco. A curva de captura confirma: os top 10% do ranking concentram 43,6% dos fogos reais.
+
+**Percentil diário:** calculado como `rank(pct=True)` dentro de cada dia — cada município recebe sua posição relativa entre os 244 municípios de Goiás naquele dia. Isso torna a visualização estável entre estações: no período seco todos os valores absolutos sobem, mas a distribuição relativa permanece interpretável.
 
 ---
 
@@ -387,9 +406,11 @@ Entrada:
   Open-Meteo API (244 chamadas paralelas, ~6 min)
 
 Saída:
-  resultados/previsao_municipio_<hoje>.csv
-  resultados/previsao_grade_<hoje>.csv
+  resultados/previsao_municipio_<hoje>.csv  (inclui prob_fogo, percentil, risco)
+  resultados/previsao_grade_<hoje>.csv      (inclui prob_fogo, percentil, risco)
 ```
+
+O percentil é calculado via `rank(pct=True)` dentro de cada data: E1 rankeia os 244 municípios, E2 rankeia as 2.976 células. A coluna `risco` é derivada do percentil (ALTO ≥ 0.90, MÉDIO ≥ 0.70, BAIXO < 0.70).
 
 **Estratégia de chamadas à API:**
 - `ThreadPoolExecutor(max_workers=8)` — 244 municípios em paralelo
@@ -452,9 +473,11 @@ GitHub Actions (cron, 03h Brasília)
 | Arquivo | Descrição |
 |---|---|
 | `fase1_dataset.py` | Constrói dataset_municipio.csv |
-| `fase1b_clima.py` | Baixa Open-Meteo histórico (244 municípios) |
+| `fase1b_clima.py` | Baixa Open-Meteo histórico (244 municípios, escrita progressiva) |
+| `fase1d_clima_2026.py` | Baixa Open-Meteo histórico de Jan–Jun 2026 para validação |
 | `fase2_modelagem.py` | Treina RF, XGBoost, LightGBM com busca de hiperparâmetros |
-| `fase3_validacao_2026.py` | Retreino completo + validação com dados reais 2026 |
+| `fase3_validacao_2026.py` | Retreino completo + validação 2026 (AUC, PR-AUC, Brier, captura top N%) |
+| `fase3c_baseline.py` | Compara modelo LightGBM vs baselines de climatologia (AUC, captura top N%) |
 | `fase4_previsao_5dias.py` | Previsão 5 dias por município (desenvolvimento) |
 
 ### Scripts de Desenvolvimento — `estagio2_grade/`
@@ -464,7 +487,7 @@ GitHub Actions (cron, 03h Brasília)
 | `fase1b_clima_05graus.py` | Baixa clima 0.5° para 148 pontos (~10 min) |
 | `fase1c_aplicar_clima.py` | Substitui clima proxy pelo clima 0.5° no dataset |
 | `fase2_modelagem.py` | Treina modelos na grade |
-| `fase3_validacao_2026.py` | Retreino completo + validação 2026 grade |
+| `fase3_validacao_2026.py` | Retreino completo + validação 2026 grade (AUC, PR-AUC, Brier, captura top N%) |
 | `fase3b_graficos_comparacao.py` | Gráficos previsão × realidade (limiar 0.6) |
 | `fase4_previsao_offline.py` | Previsão 5 dias sem API (desenvolvimento/demo) |
 
@@ -535,6 +558,9 @@ GitHub Actions (cron, 03h Brasília)
 | `past_days=30` (chamada única) | Substitui Archive + Forecast separados; mesmo janela, metade das chamadas |
 | ThreadPoolExecutor (max_workers=8) | 244 chamadas paralelas vs sequencial: ~6 min vs ~150 min |
 | sys.exit(1) em erro fatal | Impede commit de previsão incompleta no GitHub Actions |
+| Percentil diário em vez de probabilidade bruta | `class_weight="balanced"` inflata probabilidades (Brier pior que baseline ingênuo); o modelo ranqueia bem (AUC 0,816), então exibir a posição relativa ("top X%") é mais honesto que a probabilidade absoluta |
+| LightGBM para produção E2 (vs Random Forest que ganhou busca) | Diferença de AUC dentro do ruído (~0,005); LightGBM tem inferência mais rápida, suporte nativo a NaN e consistência com E1 |
+| Escrita progressiva em `fase1b_clima.py` | Batch write perdia todo o progresso em Ctrl+C; escrita por município garante retomada incremental |
 
 ---
 

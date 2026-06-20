@@ -4,7 +4,7 @@ Entrada:  ../dados/dataset_grade.csv
           ../dados/mapeamento_grade.csv
           ../dados/bdqueimadas_2026-01-01_2026-06-03.csv
           ../dados/clima_2026.csv
-Saída:    ../modelos/grade_full_corrigido.pkl   (produção)
+Saída:    ../modelos/grade_full.pkl   (produção)
           ../resultados/validacao_grade_2026.csv
 """
 
@@ -61,8 +61,8 @@ t0 = time.time()
 modelo_full.fit(X_full, y_full)
 print(f"  Treino concluído em {time.time()-t0:.0f}s")
 joblib.dump({"modelo": modelo_full, "features": FEATURES, "nome": "LightGBM Grade Full 2015-2025"},
-            os.path.join(MODELOS, "grade_full_corrigido.pkl"))
-print("  Salvo: modelos/grade_full_corrigido.pkl")
+            os.path.join(MODELOS, "grade_full.pkl"))
+print("  Salvo: modelos/grade_full.pkl")
 
 # 2. Carregar dados 2026
 print("\n[2/5] Carregando dados de 2026...")
@@ -152,6 +152,6 @@ fig.tight_layout(); fig.savefig(os.path.join(GRAFICOS,"e2_validacao_2026_mapa.pn
 
 print(f"\n{'='*65}")
 print(f"  AUC: {auc:.4f} | Recall@0.5: {rec:.4f} | Recall@0.3: {rec_03:.4f}")
-print(f"  Salvo: modelos/grade_full_corrigido.pkl")
+print(f"  Salvo: modelos/grade_full.pkl")
 print(f"{'='*65}")
 print("\n[OK] E2 Fase 3 concluída!")

@@ -58,6 +58,7 @@ for dia in dias:
             "lat":  round(float(row["Latitude"]),  4),
             "lon":  round(float(row["Longitude"]), 4),
             "prob": round(float(row["prob_fogo"]), 4),
+            "pct":  round(float(row["percentil"]), 3),
             "risco": row["risco"],
             "seco": int(row["DiaSemChuva"]),
         })
@@ -72,6 +73,7 @@ for dia in dias:
             "lat":  round(float(row["Cell_Lat"]), 1),
             "lon":  round(float(row["Cell_Lon"]), 1),
             "prob": round(float(row["prob_fogo"]), 4),
+            "pct":  round(float(row["percentil"]), 3),
             "risco": row["risco"],
             "mun":  row["Nearest_Municipio"],
             "seco": int(row["DiaSemChuva"]),

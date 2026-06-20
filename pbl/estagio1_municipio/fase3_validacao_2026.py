@@ -65,8 +65,8 @@ t0 = time.time()
 modelo_full.fit(X_full, y_full)
 print(f"  Concluído em {time.time()-t0:.0f}s")
 joblib.dump({"modelo": modelo_full, "features": FEATURES, "nome": "LightGBM Município Full 2015-2025 (corrigido)"},
-            os.path.join(MODELOS, "municipio_full_corrigido.pkl"))
-print("  Salvo: modelos/municipio_full_corrigido.pkl")
+            os.path.join(MODELOS, "municipio_full.pkl"))
+print("  Salvo: modelos/municipio_full.pkl")
 
 # 2. Carregar dados 2026
 print("\n[2/6] Carregando focos reais 2026...")
@@ -172,6 +172,6 @@ fig.tight_layout(); fig.savefig(os.path.join(GRAFICOS, "e1_validacao_2026_top_mu
 
 print(f"\n{'='*65}")
 print(f"  AUC-ROC: {auc:.4f} | Recall@0.5: {rec:.4f} | Recall@0.3: {rec_03:.4f}")
-print(f"  Salvo: modelos/municipio_full_corrigido.pkl")
+print(f"  Salvo: modelos/municipio_full.pkl")
 print(f"{'='*65}")
 print("\n[OK] E1 Fase 3 concluída!")
